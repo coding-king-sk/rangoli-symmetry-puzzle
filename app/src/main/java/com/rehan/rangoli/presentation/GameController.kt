@@ -8,12 +8,17 @@ import com.rehan.rangoli.domain.Level
 import com.rehan.rangoli.domain.PaintColor
 
 /**
- * Holds all mutable state for one puzzle attempt.
+ * All mutable UI state for a single puzzle attempt.
  *
- * Deliberately thin: every rule that decides what is *correct* lives in the
- * domain layer, so this class only tracks what the player has done.
+ * This class intentionally has no Android or Compose-lifecycle imports other
+ * than [mutableStateOf]; it is easy to unit-test and to swap out.
+ *
+ * The timer is driven externally: call [tick] once per second from a
+ * LaunchedEffect in the host composable.
  */
 class GameController(val level: Level) {
+
+	// ── Core play state ────────────────────────────────────────────────────
 
 	var filled by mutableStateOf<Map<Cell, PaintColor>>(emptyMap())
 		private set
@@ -33,21 +38,56 @@ class GameController(val level: Level) {
 	var solved by mutableStateOf(false)
 		private set
 
-	private val history = ArrayDeque<Map<Cell, PaintColor>>()
+	// ── Timer ──────────────────────────────────────────────────────────────
 
-	/** Clue cells plus whatever the player has placed. */
+	var elapsedSeconds by mutableStateOf(0)
+		private set
+
+	/** Must be called once per second from a LaunchedEffect. Stops automatically on solve. */
+	fun tick() {
+		if (!solved) elapsedSeconds++
+	}
+
+	// ── Colour highlight ───────────────────────────────────────────────────
+
+	/**
+	 * When non-null the canvas dims every cell that does NOT belong to this
+	 * colour, helping the player see how many of this colour are still needed.
+	 */
+	var highlightColor by mutableStateOf<PaintColor?>(null)
+		private set
+
+	fun toggleHighlight(color: PaintColor) {
+		highlightColor = if (highlightColor == color) null else color
+	}
+
+	fun clearHighlight() {
+		highlightColor = null
+	}
+
+	// ── Animation hint ─────────────────────────────────────────────────────
+
+	/** The most recently placed (or hinted) cell; drives the scale-pulse animation. */
+	var lastPlacedCell by mutableStateOf<Cell?>(null)
+		private set
+
+	// ── Derived state ──────────────────────────────────────────────────────
+
+	/** The full board as the player sees it: given clues plus their placements. */
 	val pattern: Map<Cell, PaintColor>
 		get() = level.givenCells + filled
 
-	/** Tiles left per colour. */
+	/** Tiles remaining per colour. */
 	val remaining: Map<PaintColor, Int>
 		get() = level.palette.mapValues { (color, total) ->
 			total - filled.values.count { it == color }
 		}
 
-	val filledCount: Int get() = filled.size
+	val filledCount: Int  get() = filled.size
 	val requiredCount: Int get() = level.hiddenCells.size
-	val canUndo: Boolean get() = history.isNotEmpty()
+	val canUndo: Boolean  get() = history.isNotEmpty()
+
+	// ── Actions ────────────────────────────────────────────────────────────
 
 	fun select(color: PaintColor) {
 		if (!solved) selected = color
@@ -57,11 +97,12 @@ class GameController(val level: Level) {
 		if (solved) return
 		if (cell !in level.hiddenCells) return
 
-		// Tapping a filled cell clears it and returns the tile to the palette.
 		if (filled.containsKey(cell)) {
+			// Clear an already-filled cell and return the tile.
 			snapshot()
 			filled = filled - cell
 			wrongCells = wrongCells - cell
+			lastPlacedCell = null
 			return
 		}
 
@@ -69,6 +110,7 @@ class GameController(val level: Level) {
 		if ((remaining[color] ?: 0) <= 0) return
 
 		snapshot()
+		lastPlacedCell = cell
 		filled = filled + (cell to color)
 		wrongCells = emptySet()
 		if (filled.size == level.hiddenCells.size) evaluate()
@@ -79,15 +121,16 @@ class GameController(val level: Level) {
 		val previous = history.removeLastOrNull() ?: return
 		filled = previous
 		wrongCells = emptySet()
+		lastPlacedCell = null
 	}
 
 	fun hint() {
 		if (solved) return
 		val target = level.hiddenCells.firstOrNull { filled[it] != level.solution[it] } ?: return
 		val correct = level.solution[target] ?: return
-
 		snapshot()
 		hintsUsed++
+		lastPlacedCell = target
 		filled = filled + (target to correct)
 		wrongCells = wrongCells - target
 		if (filled.size == level.hiddenCells.size) evaluate()
@@ -98,13 +141,16 @@ class GameController(val level: Level) {
 		snapshot()
 		filled = emptyMap()
 		wrongCells = emptySet()
+		lastPlacedCell = null
 	}
 
 	fun stars(): Int = when {
 		mistakes == 0 && hintsUsed == 0 -> 3
-		mistakes <= 1 && hintsUsed <= 1 -> 2
-		else -> 1
+		mistakes <= 1 && hintsUsed <= 1  -> 2
+		else                             -> 1
 	}
+
+	// ── Private helpers ────────────────────────────────────────────────────
 
 	private fun evaluate() {
 		val wrong = level.hiddenCells.filter { filled[it] != level.solution[it] }.toSet()
@@ -121,6 +167,8 @@ class GameController(val level: Level) {
 		history.addLast(filled)
 		if (history.size > MAX_HISTORY) history.removeFirst()
 	}
+
+	private val history = ArrayDeque<Map<Cell, PaintColor>>()
 
 	private companion object {
 		const val MAX_HISTORY = 40
