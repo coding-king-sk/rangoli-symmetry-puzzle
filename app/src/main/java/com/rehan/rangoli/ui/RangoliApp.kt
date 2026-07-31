@@ -3,7 +3,7 @@ package com.rehan.rangoli.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,13 +18,18 @@ import com.rehan.rangoli.ui.levels.LevelMapScreen
 import com.rehan.rangoli.ui.theme.RangoliTheme
 import kotlinx.coroutines.launch
 
-// ─── Simple screen stack ─────────────────────────────────────────────────────────
-
-private sealed class Screen {
-    object LevelMap      : Screen()
-    object Achievements  : Screen()
-    data class Game(val levelIndex: Int) : Screen()
-}
+/*
+ * Navigation is stored as plain Ints.
+ *
+ * IMPORTANT: a sealed class cannot be put in `rememberSaveable` unless it is
+ * Parcelable or has a custom Saver. Doing so throws
+ *   IllegalArgumentException: ... cannot be saved using the current SaveableStateRegistry
+ * the moment Android saves instance state (backgrounding the app, rotating the
+ * screen, or the system reclaiming memory). Ints are saveable out of the box.
+ */
+private const val SCREEN_LEVEL_MAP    = 0
+private const val SCREEN_ACHIEVEMENTS = 1
+private const val SCREEN_GAME         = 2
 
 @Composable
 fun RangoliApp() {
@@ -32,7 +37,7 @@ fun RangoliApp() {
     val store   = remember { ProgressStore(context) }
     val scope   = rememberCoroutineScope()
 
-    // ── Persistent state ───────────────────────────────────────────────
+    // ── Persistent state ────────────────────────────────────────────────────
     val stars        by store.stars.collectAsState(initial = emptyMap())
     val bestTimes    by store.bestTimes.collectAsState(initial = emptyMap())
     val totalStars   by store.totalStars.collectAsState(initial = 0)
@@ -41,90 +46,78 @@ fun RangoliApp() {
     val themeMode    by store.themeMode.collectAsState(initial = "dark")
     val isDark = themeMode == "dark"
 
-    // ── Navigation ───────────────────────────────────────────────────────
-    var screen by rememberSaveable { mutableStateOf<Screen>(Screen.LevelMap) }
+    // ── Navigation (saveable primitives only) ───────────────────────────────
+    var screen       by rememberSaveable { mutableIntStateOf(SCREEN_LEVEL_MAP) }
+    var playingIndex by rememberSaveable { mutableIntStateOf(0) }
 
     RangoliTheme(isDark = isDark) {
-        when (val s = screen) {
+        when (screen) {
 
-            Screen.LevelMap -> LevelMapScreen(
+            SCREEN_ACHIEVEMENTS -> AchievementsScreen(
+                unlockedIds    = achievements,
+                totalStars     = totalStars,
+                completedCount = stars.size,
+                onBack         = { screen = SCREEN_LEVEL_MAP }
+            )
+
+            SCREEN_GAME -> GameScreen(
+                levelIndex           = playingIndex,
+                bestTimesMap         = bestTimes,
+                onBack               = { screen = SCREEN_LEVEL_MAP },
+                onSolved             = { earned, seconds ->
+                    scope.launch {
+                        val solvedIndex = playingIndex
+                        store.saveStars(solvedIndex, earned)
+                        store.saveBestTime(solvedIndex, seconds)
+
+                        // Mistake-free streak
+                        val newStreak = if (earned >= 2) streak + 1 else 0
+                        store.saveStreak(newStreak)
+
+                        // ── Achievement checks ──
+                        val allStars = stars + (solvedIndex to maxOf(earned, stars[solvedIndex] ?: 0))
+                        val allTimes = bestTimes + (solvedIndex to seconds)
+                        val perfectCount = allStars.values.count { it == 3 }
+
+                        suspend fun unlock(a: Achievement) {
+                            if (a.id !in achievements) store.unlockAchievement(a)
+                        }
+
+                        if (allStars.size == 1)                  unlock(Achievement.FIRST_WIN)
+                        if (earned == 3)                         unlock(Achievement.PERFECT_SOLVE)
+                        if (seconds <= 60)                       unlock(Achievement.SPEED_STAR)
+                        if (allStars.size >= 50)                 unlock(Achievement.HALFWAY)
+                        if (allStars.size >= LevelCatalog.TOTAL)  unlock(Achievement.MASTER)
+                        if (newStreak >= 5)                      unlock(Achievement.STREAK_FIVE)
+                        if ((0..14).all { it in allStars })       unlock(Achievement.CHAPTER_ONE)
+                        if (perfectCount >= 10)                  unlock(Achievement.THREE_STARS_TEN)
+                        if (perfectCount >= 10)                  unlock(Achievement.NO_HINT_TEN)
+                        if (allTimes.values.count { it <= 60 } >= 10) unlock(Achievement.SPEED_TEN)
+                    }
+                },
+                onNext = {
+                    if (playingIndex + 1 < LevelCatalog.TOTAL) {
+                        playingIndex += 1
+                    } else {
+                        screen = SCREEN_LEVEL_MAP
+                    }
+                }
+            )
+
+            else -> LevelMapScreen(
                 stars          = stars,
                 bestTimes      = bestTimes,
                 totalStars     = totalStars,
                 isDark         = isDark,
-                onLevelClick   = { index -> screen = Screen.Game(index) },
-                onAchievements = { screen = Screen.Achievements },
+                onLevelClick   = { index ->
+                    playingIndex = index
+                    screen = SCREEN_GAME
+                },
+                onAchievements = { screen = SCREEN_ACHIEVEMENTS },
                 onToggleTheme  = {
                     scope.launch { store.saveTheme(if (isDark) "light" else "dark") }
                 }
             )
-
-            Screen.Achievements -> AchievementsScreen(
-                unlockedIds    = achievements,
-                totalStars     = totalStars,
-                completedCount = stars.size,
-                onBack         = { screen = Screen.LevelMap }
-            )
-
-            is Screen.Game -> {
-                val playing = s.levelIndex
-                GameScreen(
-                    levelIndex           = playing,
-                    starsMap             = stars,
-                    bestTimesMap         = bestTimes,
-                    unlockedAchievements = achievements,
-                    onBack               = { screen = Screen.LevelMap },
-                    onSolved             = { earned, seconds ->
-                        scope.launch {
-                            store.saveStars(playing, earned)
-                            store.saveBestTime(playing, seconds)
-
-                            // Update streak
-                            val newStreak = if (earned >= 2) streak + 1 else 0
-                            store.saveStreak(newStreak)
-
-                            // ── Achievement checks ──
-                            val allStars = stars + (playing to maxOf(earned, stars[playing] ?: 0))
-                            val newUnlocked = achievements.toMutableSet()
-
-                            fun maybeUnlock(a: Achievement) = scope.launch {
-                                if (a.id !in newUnlocked) {
-                                    store.unlockAchievement(a)
-                                    newUnlocked.add(a.id)
-                                }
-                            }
-
-                            if (allStars.size == 1)  maybeUnlock(Achievement.FIRST_WIN)
-                            if (earned == 3)         maybeUnlock(Achievement.PERFECT_SOLVE)
-                            if (seconds <= 60)       maybeUnlock(Achievement.SPEED_STAR)
-                            if (allStars.size >= 50) maybeUnlock(Achievement.HALFWAY)
-                            if (allStars.size >= LevelCatalog.TOTAL) maybeUnlock(Achievement.MASTER)
-                            if (newStreak >= 5)      maybeUnlock(Achievement.STREAK_FIVE)
-
-                            // Chapter 1 complete
-                            val ch1Done = (0..14).all { it in allStars }
-                            if (ch1Done) maybeUnlock(Achievement.CHAPTER_ONE)
-
-                            // 10 levels with 3 stars
-                            val perfectCount = allStars.values.count { it == 3 }
-                            if (perfectCount >= 10) maybeUnlock(Achievement.THREE_STARS_TEN)
-
-                            // 10 speed clears tracked via bestTimes
-                            val speedCount = (bestTimes + (playing to seconds)).values.count { it <= 60 }
-                            if (speedCount >= 10) maybeUnlock(Achievement.SPEED_TEN)
-
-                            // 10 levels without hints (stars==3 is a good proxy)
-                            if (perfectCount >= 10) maybeUnlock(Achievement.NO_HINT_TEN)
-                        }
-                    },
-                    onNext = {
-                        screen = if (playing + 1 < LevelCatalog.TOTAL)
-                            Screen.Game(playing + 1)
-                        else
-                            Screen.LevelMap
-                    }
-                )
-            }
         }
     }
 }

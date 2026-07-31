@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -23,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rehan.rangoli.domain.LevelCatalog
@@ -41,8 +39,8 @@ fun LevelMapScreen(
     onAchievements: () -> Unit,
     onToggleTheme: () -> Unit
 ) {
-    val highestSolved = remember(stars) { stars.keys.maxOrNull() ?: -1 }
-    val completedCount = stars.size
+    val highestSolved    = remember(stars) { stars.keys.maxOrNull() ?: -1 }
+    val completedCount   = stars.size
     val maxPossibleStars = LevelCatalog.TOTAL * 3
 
     LazyColumn(
@@ -53,7 +51,6 @@ fun LevelMapScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            // Header row
             Row(
                 modifier          = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -65,26 +62,26 @@ fun LevelMapScreen(
                         color      = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
-                    // Total star count
                     Text(
                         text  = "⭐ $totalStars / $maxPossibleStars  •  $completedCount levels done",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                // Achievements button (trophy icon via text fallback)
                 IconButton(onClick = onAchievements) {
                     Text(text = "🏆", style = MaterialTheme.typography.titleLarge)
                 }
-                // Theme toggle
                 IconButton(onClick = onToggleTheme) {
-                    Text(text = if (isDark) "☀️" else "🌙", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        text  = if (isDark) "☀️" else "🌙",
+                        style = MaterialTheme.typography.titleLarge
+                    )
                 }
             }
             Text(
-                text    = "Symmetry poori karo, palette limited hai",
-                style   = MaterialTheme.typography.bodyMedium,
-                color   = MaterialTheme.colorScheme.onSurfaceVariant,
+                text     = "Symmetry poori karo, palette limited hai",
+                style    = MaterialTheme.typography.bodyMedium,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp)
             )
         }
@@ -114,7 +111,6 @@ fun LevelMapScreen(
                         LevelTile(
                             index    = index,
                             stars    = stars[index] ?: 0,
-                            bestTime = bestTimes[index],
                             unlocked = index <= highestSolved + 1,
                             onClick  = { onLevelClick(index) },
                             modifier = Modifier.weight(1f)
@@ -133,7 +129,6 @@ fun LevelMapScreen(
 private fun LevelTile(
     index: Int,
     stars: Int,
-    bestTime: Int?,
     unlocked: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
