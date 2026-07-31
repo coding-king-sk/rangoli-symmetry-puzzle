@@ -3,6 +3,7 @@ package com.rehan.rangoli.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -16,14 +17,14 @@ private val Context.progressDataStore: DataStore<Preferences> by
 	preferencesDataStore(name = "rangoli_progress")
 
 /**
- * Persistent storage for player progress.
+ * Persistent storage for player progress and settings.
  *
  * Keys are kept flat (no serialisation library) so the store stays readable
  * if we ever need to inspect it with adb.
  */
 class ProgressStore(private val context: Context) {
 
-	// ── Stars ───────────────────────────────────────────────────────────────
+	// ── Stars ────────────────────────────────────────────────────────────────
 
 	val stars: Flow<Map<Int, Int>> = context.progressDataStore.data.map { prefs ->
 		prefs.asMap().mapNotNull { (key, value) ->
@@ -43,7 +44,7 @@ class ProgressStore(private val context: Context) {
 		}
 	}
 
-	// ── Best times ──────────────────────────────────────────────────────────
+	// ── Best times ───────────────────────────────────────────────────────────
 
 	val bestTimes: Flow<Map<Int, Int>> = context.progressDataStore.data.map { prefs ->
 		prefs.asMap().mapNotNull { (key, value) ->
@@ -61,44 +62,57 @@ class ProgressStore(private val context: Context) {
 		}
 	}
 
-	// ── Achievements ────────────────────────────────────────────────────────
+	// ── Achievements ─────────────────────────────────────────────────────────
 
-	private val ACHIEVEMENTS_KEY = stringSetPreferencesKey("achievements")
+	private val achievementsKey = stringSetPreferencesKey("achievements")
 
 	val unlockedAchievements: Flow<Set<String>> = context.progressDataStore.data.map { prefs ->
-		prefs[ACHIEVEMENTS_KEY] ?: emptySet()
+		prefs[achievementsKey] ?: emptySet()
 	}
 
 	suspend fun unlockAchievement(achievement: Achievement) {
 		context.progressDataStore.edit { prefs ->
-			val current = prefs[ACHIEVEMENTS_KEY] ?: emptySet()
-			if (achievement.id !in current) prefs[ACHIEVEMENTS_KEY] = current + achievement.id
+			val current = prefs[achievementsKey] ?: emptySet()
+			if (achievement.id !in current) prefs[achievementsKey] = current + achievement.id
 		}
 	}
 
 	// ── Theme ────────────────────────────────────────────────────────────────
 
-	private val THEME_KEY = stringPreferencesKey("theme_mode")
+	private val themeKey = stringPreferencesKey("theme_mode")
 
 	/** "dark" (default) or "light". */
 	val themeMode: Flow<String> = context.progressDataStore.data.map { prefs ->
-		prefs[THEME_KEY] ?: "dark"
+		prefs[themeKey] ?: "dark"
 	}
 
 	suspend fun saveTheme(mode: String) {
-		context.progressDataStore.edit { prefs -> prefs[THEME_KEY] = mode }
+		context.progressDataStore.edit { prefs -> prefs[themeKey] = mode }
 	}
 
-	// ── Consecutive-mistake-free streak ─────────────────────────────────────
+	// ── Colour-blind mode ────────────────────────────────────────────────────
 
-	private val STREAK_KEY = intPreferencesKey("clean_streak")
+	private val colorBlindKey = booleanPreferencesKey("color_blind")
+
+	/** When true the board draws a distinct shape glyph inside every filled cell. */
+	val colorBlindMode: Flow<Boolean> = context.progressDataStore.data.map { prefs ->
+		prefs[colorBlindKey] ?: false
+	}
+
+	suspend fun saveColorBlind(enabled: Boolean) {
+		context.progressDataStore.edit { prefs -> prefs[colorBlindKey] = enabled }
+	}
+
+	// ── Mistake-free streak ──────────────────────────────────────────────────
+
+	private val streakKey = intPreferencesKey("clean_streak")
 
 	val cleanStreak: Flow<Int> = context.progressDataStore.data.map { prefs ->
-		prefs[STREAK_KEY] ?: 0
+		prefs[streakKey] ?: 0
 	}
 
 	suspend fun saveStreak(streak: Int) {
-		context.progressDataStore.edit { prefs -> prefs[STREAK_KEY] = streak }
+		context.progressDataStore.edit { prefs -> prefs[streakKey] = streak }
 	}
 
 	companion object {

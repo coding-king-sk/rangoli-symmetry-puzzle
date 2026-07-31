@@ -23,6 +23,9 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.rehan.rangoli.domain.Cell
 import com.rehan.rangoli.domain.Level
@@ -33,10 +36,11 @@ import com.rehan.rangoli.domain.SymmetryType
  * Board canvas with:
  *  - Dashed symmetry axis
  *  - Kolam dots for empty cells
- *  - Colour highlight (dim unrelated cells)
+ *  - Colour highlight (dims unrelated cells)
  *  - Scale-punch animation on the last placed cell
  *  - Horizontal shake on wrong cells
  *  - Solve glow
+ *  - Colour-blind mode: distinct shape glyph inside every filled cell
  */
 @Composable
 fun RangoliCanvas(
@@ -47,28 +51,33 @@ fun RangoliCanvas(
     lastPlacedCell: Cell?,
     highlightColor: PaintColor?,
     shakeOffsetPx: Float,
+    colorBlindMode: Boolean,
     onCellTap: (Cell) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val gridSize = level.size
-    val axisColor = MaterialTheme.colorScheme.primary
+    val gridSize   = level.size
+    val axisColor  = MaterialTheme.colorScheme.primary
     val errorColor = MaterialTheme.colorScheme.error
+    val measurer   = rememberTextMeasurer()
 
     // Solve glow
     val glow by animateFloatAsState(
-        targetValue = if (solved) 1f else 0f,
+        targetValue   = if (solved) 1f else 0f,
         animationSpec = tween(700),
-        label = "solveGlow"
+        label         = "solveGlow"
     )
 
-    // Scale-punch for last placed cell
+    // Scale-punch for the last placed cell
     val punchScale = remember { Animatable(1f) }
     LaunchedEffect(lastPlacedCell) {
         if (lastPlacedCell != null) {
             punchScale.snapTo(1.28f)
             punchScale.animateTo(
-                1f,
-                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+                targetValue   = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness    = Spring.StiffnessMedium
+                )
             )
         }
     }
@@ -90,6 +99,21 @@ fun RangoliCanvas(
         val radius = cellPx * 0.22f
         val dot    = cellPx * 0.08f
 
+        // Measure each glyph once per frame (max 5 colours) instead of per cell.
+        val glyphLayouts = if (colorBlindMode) {
+            PaintColor.values().associateWith { paint ->
+                measurer.measure(
+                    text  = paint.glyph,
+                    style = TextStyle(
+                        fontSize = (cellPx * 0.40f).toSp(),
+                        color    = Color.Black.copy(alpha = 0.70f)
+                    )
+                )
+            }
+        } else {
+            emptyMap()
+        }
+
         // Solve glow background
         if (glow > 0f) {
             drawCircle(
@@ -109,8 +133,7 @@ fun RangoliCanvas(
 
                 val isWrong     = cell in wrongCells
                 val xOffset     = if (isWrong) shakeOffsetPx else 0f
-                val isHighlit   = highlightColor == null || color == highlightColor ||
-                    (cell in level.givenCells && level.givenCells[cell] == highlightColor)
+                val isHighlit   = highlightColor == null || color == highlightColor
                 val dimAlpha    = if (!isHighlit) 0.18f else 1f
                 val isLastPlace = cell == lastPlacedCell
 
@@ -121,7 +144,6 @@ fun RangoliCanvas(
                     val cr = CornerRadius(radius)
 
                     if (isLastPlace && !isWrong) {
-                        // Scale-punch on recently placed cell
                         val pivot = Offset(tl.x + sz.width / 2, tl.y + sz.height / 2)
                         scale(punchScale.value, pivot) {
                             drawRoundRect(color = cellColor, topLeft = tl, size = sz, cornerRadius = cr)
@@ -130,18 +152,31 @@ fun RangoliCanvas(
                         drawRoundRect(color = cellColor, topLeft = tl, size = sz, cornerRadius = cr)
                     }
 
-                    // Subtle white stroke on player-placed cells
+                    // Subtle white stroke marks cells the player filled in
                     if (cell in level.hiddenCells) {
                         drawRoundRect(
-                            color       = Color.White.copy(alpha = 0.30f * dimAlpha),
-                            topLeft     = tl,
-                            size        = sz,
+                            color        = Color.White.copy(alpha = 0.30f * dimAlpha),
+                            topLeft      = tl,
+                            size         = sz,
                             cornerRadius = cr,
-                            style       = Stroke(width = cellPx * 0.04f)
+                            style        = Stroke(width = cellPx * 0.04f)
+                        )
+                    }
+
+                    // Colour-blind mode: draw the colour's unique shape glyph
+                    val layout = glyphLayouts[color]
+                    if (layout != null) {
+                        drawText(
+                            textLayoutResult = layout,
+                            topLeft = Offset(
+                                x = center.x - layout.size.width / 2f + xOffset,
+                                y = center.y - layout.size.height / 2f
+                            ),
+                            alpha = dimAlpha
                         )
                     }
                 } else {
-                    // Empty: kolam dot, shifted when this cell is wrong-highlighted
+                    // Empty cell: kolam dot
                     drawCircle(
                         color  = Color.White.copy(alpha = 0.22f * dimAlpha),
                         radius = dot,
@@ -165,14 +200,14 @@ fun RangoliCanvas(
 }
 
 private fun DrawScope.drawSymmetryAxis(symmetry: SymmetryType, color: Color) {
-    val w = size.width
-    val h = size.height
+    val w     = size.width
+    val h     = size.height
     val paint = color.copy(alpha = 0.38f)
     val sw    = 1.5.dp.toPx()
     val dash  = PathEffect.dashPathEffect(floatArrayOf(14f, 16f))
 
-    fun line(s: Offset, e: Offset) = drawLine(color = paint, start = s, end = e,
-        strokeWidth = sw, pathEffect = dash)
+    fun line(s: Offset, e: Offset) =
+        drawLine(color = paint, start = s, end = e, strokeWidth = sw, pathEffect = dash)
 
     val vert  = { line(Offset(w / 2f, 0f), Offset(w / 2f, h)) }
     val horiz = { line(Offset(0f, h / 2f), Offset(w, h / 2f)) }
@@ -180,11 +215,11 @@ private fun DrawScope.drawSymmetryAxis(symmetry: SymmetryType, color: Color) {
     val anti  = { line(Offset(w, 0f), Offset(0f, h)) }
 
     when (symmetry) {
-        SymmetryType.VERTICAL_MIRROR    -> vert()
-        SymmetryType.HORIZONTAL_MIRROR  -> horiz()
-        SymmetryType.DIAGONAL_MIRROR    -> diag()
+        SymmetryType.VERTICAL_MIRROR   -> vert()
+        SymmetryType.HORIZONTAL_MIRROR -> horiz()
+        SymmetryType.DIAGONAL_MIRROR   -> diag()
         SymmetryType.FOUR_FOLD_REFLECTION,
-        SymmetryType.ROTATIONAL_90      -> { vert(); horiz() }
-        SymmetryType.EIGHT_FOLD_RADIAL  -> { vert(); horiz(); diag(); anti() }
+        SymmetryType.ROTATIONAL_90     -> { vert(); horiz() }
+        SymmetryType.EIGHT_FOLD_RADIAL -> { vert(); horiz(); diag(); anti() }
     }
 }

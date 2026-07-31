@@ -18,8 +18,11 @@ android {
 
 	buildTypes {
 		release {
-			isMinifyEnabled = true
-			isShrinkResources = true
+			// R8 was stripping Compose runtime + DataStore classes, which made the
+			// release APK crash immediately on launch. Keep this off until the
+			// keep-rules in proguard-rules.pro are verified on a real device.
+			isMinifyEnabled = false
+			isShrinkResources = false
 			proguardFiles(
 				getDefaultProguardFile("proguard-android-optimize.txt"),
 				"proguard-rules.pro"
