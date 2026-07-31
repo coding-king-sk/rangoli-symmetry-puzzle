@@ -44,6 +44,7 @@ fun RangoliApp() {
     val achievements by store.unlockedAchievements.collectAsState(initial = emptySet())
     val streak       by store.cleanStreak.collectAsState(initial = 0)
     val themeMode    by store.themeMode.collectAsState(initial = "dark")
+    val colorBlind   by store.colorBlindMode.collectAsState(initial = false)
     val isDark = themeMode == "dark"
 
     // ── Navigation (saveable primitives only) ───────────────────────────────
@@ -61,10 +62,11 @@ fun RangoliApp() {
             )
 
             SCREEN_GAME -> GameScreen(
-                levelIndex           = playingIndex,
-                bestTimesMap         = bestTimes,
-                onBack               = { screen = SCREEN_LEVEL_MAP },
-                onSolved             = { earned, seconds ->
+                levelIndex     = playingIndex,
+                bestTimesMap   = bestTimes,
+                colorBlindMode = colorBlind,
+                onBack         = { screen = SCREEN_LEVEL_MAP },
+                onSolved       = { earned, seconds ->
                     scope.launch {
                         val solvedIndex = playingIndex
                         store.saveStars(solvedIndex, earned)
@@ -83,16 +85,18 @@ fun RangoliApp() {
                             if (a.id !in achievements) store.unlockAchievement(a)
                         }
 
-                        if (allStars.size == 1)                  unlock(Achievement.FIRST_WIN)
-                        if (earned == 3)                         unlock(Achievement.PERFECT_SOLVE)
-                        if (seconds <= 60)                       unlock(Achievement.SPEED_STAR)
-                        if (allStars.size >= 50)                 unlock(Achievement.HALFWAY)
-                        if (allStars.size >= LevelCatalog.TOTAL)  unlock(Achievement.MASTER)
-                        if (newStreak >= 5)                      unlock(Achievement.STREAK_FIVE)
-                        if ((0..14).all { it in allStars })       unlock(Achievement.CHAPTER_ONE)
-                        if (perfectCount >= 10)                  unlock(Achievement.THREE_STARS_TEN)
-                        if (perfectCount >= 10)                  unlock(Achievement.NO_HINT_TEN)
-                        if (allTimes.values.count { it <= 60 } >= 10) unlock(Achievement.SPEED_TEN)
+                        if (allStars.size == 1)                       unlock(Achievement.FIRST_WIN)
+                        if (earned == 3)                              unlock(Achievement.PERFECT_SOLVE)
+                        if (seconds <= 60)                            unlock(Achievement.SPEED_STAR)
+                        if (allStars.size >= 50)                      unlock(Achievement.HALFWAY)
+                        if (allStars.size >= LevelCatalog.TOTAL)       unlock(Achievement.MASTER)
+                        if (newStreak >= 5)                           unlock(Achievement.STREAK_FIVE)
+                        if ((0..14).all { it in allStars })            unlock(Achievement.CHAPTER_ONE)
+                        if (perfectCount >= 10) {
+                            unlock(Achievement.THREE_STARS_TEN)
+                            unlock(Achievement.NO_HINT_TEN)
+                        }
+                        if (allTimes.values.count { it <= 60 } >= 10)  unlock(Achievement.SPEED_TEN)
                     }
                 },
                 onNext = {
@@ -105,17 +109,21 @@ fun RangoliApp() {
             )
 
             else -> LevelMapScreen(
-                stars          = stars,
-                bestTimes      = bestTimes,
-                totalStars     = totalStars,
-                isDark         = isDark,
-                onLevelClick   = { index ->
+                stars              = stars,
+                bestTimes          = bestTimes,
+                totalStars         = totalStars,
+                isDark             = isDark,
+                colorBlindMode     = colorBlind,
+                onLevelClick       = { index ->
                     playingIndex = index
                     screen = SCREEN_GAME
                 },
-                onAchievements = { screen = SCREEN_ACHIEVEMENTS },
-                onToggleTheme  = {
+                onAchievements     = { screen = SCREEN_ACHIEVEMENTS },
+                onToggleTheme      = {
                     scope.launch { store.saveTheme(if (isDark) "light" else "dark") }
+                },
+                onToggleColorBlind = {
+                    scope.launch { store.saveColorBlind(!colorBlind) }
                 }
             )
         }

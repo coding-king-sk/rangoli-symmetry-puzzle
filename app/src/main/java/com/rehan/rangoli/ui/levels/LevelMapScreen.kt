@@ -35,9 +35,11 @@ fun LevelMapScreen(
     bestTimes: Map<Int, Int>,
     totalStars: Int,
     isDark: Boolean,
+    colorBlindMode: Boolean,
     onLevelClick: (Int) -> Unit,
     onAchievements: () -> Unit,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    onToggleColorBlind: () -> Unit
 ) {
     val highestSolved    = remember(stars) { stars.keys.maxOrNull() ?: -1 }
     val completedCount   = stars.size
@@ -68,9 +70,23 @@ fun LevelMapScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // Achievements
                 IconButton(onClick = onAchievements) {
                     Text(text = "🏆", style = MaterialTheme.typography.titleLarge)
                 }
+                // Colour-blind mode toggle
+                IconButton(onClick = onToggleColorBlind) {
+                    Text(
+                        text     = "◆",
+                        style    = MaterialTheme.typography.titleLarge,
+                        color    = if (colorBlindMode)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.alpha(if (colorBlindMode) 1f else 0.45f)
+                    )
+                }
+                // Dark / light theme toggle
                 IconButton(onClick = onToggleTheme) {
                     Text(
                         text  = if (isDark) "☀️" else "🌙",
@@ -79,7 +95,10 @@ fun LevelMapScreen(
                 }
             }
             Text(
-                text     = "Symmetry poori karo, palette limited hai",
+                text     = if (colorBlindMode)
+                    "Colour-blind mode ON — har rang ka apna shape hai"
+                else
+                    "Symmetry poori karo, palette limited hai",
                 style    = MaterialTheme.typography.bodyMedium,
                 color    = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp)

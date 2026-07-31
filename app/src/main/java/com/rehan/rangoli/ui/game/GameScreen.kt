@@ -57,6 +57,7 @@ private fun formatTime(s: Int): String = "%d:%02d".format(s / 60, s % 60)
 fun GameScreen(
     levelIndex: Int,
     bestTimesMap: Map<Int, Int>,
+    colorBlindMode: Boolean,
     onBack: () -> Unit,
     onSolved: (stars: Int, seconds: Int) -> Unit,
     onNext: () -> Unit
@@ -70,7 +71,7 @@ fun GameScreen(
     val sound      = rememberSoundManager()
 
     // Snapshot the best time BEFORE this attempt, otherwise onSolved has already
-    // overwritten it and the "new best!" badge can never show.
+    // overwritten it and the "new best!" badge could never show.
     val bestTimeAtStart = remember(levelIndex, playCount) { bestTimesMap[levelIndex] }
 
     // ── Timer ───────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ fun GameScreen(
         }
     }
 
-    // ── Wrong-cell shake ────────────────────────────────────────────────────
+    // ── Wrong-cell shake ─────────────────────────────────────────────────────
     val shakeAnim = remember { Animatable(0f) }
     LaunchedEffect(controller.wrongCells) {
         if (controller.wrongCells.isNotEmpty()) {
@@ -103,8 +104,7 @@ fun GameScreen(
         }
     }
 
-    // ── Fire onSolved exactly once per attempt ──────────────────────────────
-    // Keyed on playCount so a replay reports its result too.
+    // ── Fire onSolved exactly once per attempt (keyed on playCount so replays count) ─
     var reported by remember(levelIndex, playCount) { mutableStateOf(false) }
     LaunchedEffect(controller.solved, levelIndex, playCount) {
         if (controller.solved && !reported) {
@@ -166,13 +166,12 @@ fun GameScreen(
                 )
             }
 
-            // Simple hand-rolled timer bar (no Material version dependency)
             TimerBar(
                 seconds  = controller.elapsedSeconds,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
-            // ── Board ───────────────────────────────────────────────────────
+            // ── Board ────────────────────────────────────────────────────────
             RangoliCanvas(
                 level          = level,
                 pattern        = controller.pattern,
@@ -181,6 +180,7 @@ fun GameScreen(
                 lastPlacedCell = controller.lastPlacedCell,
                 highlightColor = controller.highlightColor,
                 shakeOffsetPx  = shakeAnim.value,
+                colorBlindMode = colorBlindMode,
                 onCellTap      = { cell ->
                     val wasEmpty = controller.pattern[cell] == null
                     controller.tap(cell)
@@ -253,7 +253,7 @@ fun GameScreen(
             Spacer(Modifier.height(24.dp))
         }
 
-        // ── Single overlay, two variants (no stray banner state) ────────────
+        // ── Single result overlay, two variants ────────────────────────────────
         AnimatedVisibility(
             visible = controller.solved,
             enter   = fadeIn() + scaleIn(initialScale = 0.88f),
